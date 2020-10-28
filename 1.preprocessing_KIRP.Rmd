@@ -1,0 +1,421 @@
+---
+title: "A Preprocessing analysis of clinical data of TCGA-KIRP patients"
+output: 
+  html_document: 
+    default
+  github_document: 
+    df_print: paged
+    html_preview: FALSE
+    keep_html: TRUE
+  pdf_document:
+    latex_engine: xelatex
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_format = "all") })    
+---
+
+This project contains a pipeline for analysis of The Cancer Genome Atlas Kidney - Renal Clear Cell Carcinoma (TCGA-KIRC) clinical data, from [Genomic Data Commons Data Portal](https://portal.gdc.cancer.gov/exploration?filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in%22%2C%22content%22%3A%7B%22field%22%3A%22cases.project.project_id%22%2C%22value%22%3A%5B%22TCGA-KIRC%22%5D%7D%7D%5D%7D) and [cBioPortal](https://www.cbioportal.org/study/summary?id=kirp_tcga).
+
+In this section, the initial preprocessing is applied to clean the data and arrange following the Tidyverse philosophy. Exploratory Data Analysis summarizes their main characteristics. 
+
+
+```{r, error=TRUE, message=FALSE, warning=FALSE, purl=FALSE, results='hide'}
+## This chunk automatically generates a text .R version of this script when running within knitr.
+input  = knitr::current_input()  # filename of input document
+output = paste(tools::file_path_sans_ext(input), 'R', sep = '.')
+try(knitr::purl(input,output,documentation=2,quiet=T), silent = TRUE)
+# Avoid duplicate label error of knitr::purl
+options(knitr.duplicate.label = 'allow')
+# Code to browse the markdown file with renderized images.
+knitr::opts_chunk$set(
+  fig.path = "figs/render-"
+)
+```
+
+
+```{r message=FALSE, warning=FALSE, echo = FALSE}
+# Set the packages of interest
+packages = c("tidyverse","skimr","finalfit")
+
+# if a package is installed, it will be loaded
+# otherwise, the missing package(s) will be installed and loaded
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+
+suppressMessages(library("tidyverse"))
+rm(packages)
+setwd(".")
+```
+
+
+## 1. Data importing and visualizing
+
+```{r message=FALSE, warning=FALSE, paged.print=TRUE}
+kirp_clin_raw <- read_delim("C:/Users/Ericd/Documents/KIRP Analisys/TCGA-CBIOPORTAL-DATA/kirp_tcga_pan_can_atlas_2018_clinical_data.tsv", "\t", 
+                            escape_double = FALSE, 
+                            trim_ws = TRUE)
+```
+
+
+```{r echo=FALSE, message=FALSE, results='hide', paged.print=TRUE}
+class(kirp_clin_raw) 
+dim(kirp_clin_raw) 
+names(kirp_clin_raw) 
+glimpse(kirp_clin_raw)
+skim(kirp_clin_raw) 
+#View(kirc_clin_raw)
+```
+```{r}
+unique(kirp_clin_raw$`3q Status`)
+```
+
+## 2. Cleaning data
+
+Select variables based on NA count (> 50% complete is a good choice!).
+<!-- # TO DO @PATRICK: simplify code NA_sum? -->
+<!-- # kirc_clean <- kirc_clin_raw %>% -->
+<!-- #     summarise_all(~ sum(is.na(.)))  -->
+
+```{r}
+NA_fifty <- dim(kirp_clin_raw)[1]/2
+
+NA_sum <- colSums(is.na(kirp_clin_raw))
+NA_sum <- as.data.frame(NA_sum)
+NA_sum <- tibble::rownames_to_column(NA_sum, "variables")
+NA_sum <- NA_sum %>%
+     filter(NA_sum < NA_fifty)
+
+kirp_clean <- kirp_clin_raw %>%
+     select(one_of(NA_sum$variables))
+```
+
+Remove duplicate observations:
+
+```{r}
+kirp_clean0 <- kirp_clean %>%
+     distinct_at('Patient ID', .keep_all = TRUE)
+```
+
+Remove numeric variables with unique observations:  
+<!-- # TO DO @PATRICK: function to select variables with unique observations? 
+<!-- # kirc_cleanX <- kirc_clean1 %>% -->
+<!-- #     summarise_if(is.numeric, ~ n=unique(.)) -->
+
+```{r message=FALSE, warning=FALSE, paged.print=TRUE}
+kirp_clean0 %>%
+     select_if(is.numeric) %>%
+     skim()
+
+kirp_clean1 <-  kirp_clean0  %>%
+     select(!c('Number of Samples Per Patient', 
+               'Last Alive Less Initial Pathologic Diagnosis Date Calculated Day Value'))
+```
+
+Remove character variables with unique observations:
+
+```{r  message=FALSE, warning=FALSE, paged.print=TRUE}
+kirp_clean1 %>%
+  select_if(is.character) %>%
+  skim()
+
+kirp_clean2 <- kirp_clean1  %>%
+     select(!c('Study ID',
+               'Cancer Type',
+               'Cancer Type Detailed',
+               'TCGA PanCanAtlas Cancer Type Acronym',
+               'ICD-10 Classification', 
+               'International Classification of Diseases for Oncology, Third Edition ICD-O-3 Histology Code',
+               'International Classification of Diseases for Oncology, Third Edition ICD-O-3 Site Code',
+               'Informed consent verified',
+               'Oncotree Code',
+               'Sample Type',
+               'Somatic Status',
+               'Subtype',
+               'Tumor Disease Anatomic Site',
+               'Tumor Type',
+               'Last Communication Contact from Initial Pathologic Diagnosis Date'))
+```
+
+
+Remove character variables with similar information - check each one!
+
+```{r}
+table(kirp_clean2$`Overall Survival Status`, exclude = NULL)
+table(kirp_clean2$`Disease-specific Survival status`, exclude = NULL)
+
+kirp_clean3 <- kirp_clean2  %>%
+     select(!c('Sample ID',
+               'Other Patient ID'))
+```
+
+Remove other variables not directly related to patient - check each one!
+
+```{r}
+kirp_clean4 <- kirp_clean3  %>%
+     select(!c('American Joint Committee on Cancer Publication Version Type',
+               'Center of sequencing',
+               'Form completion date',
+               '10p Status',
+               '10q Status',
+               '11p Status',
+               '11q Status',
+               '12p Status',
+               '12q Status',
+               '13 (13q) Status',
+               '14 (14q) Status',
+               '15 (15q) Status',
+               '16p Status',
+               '16q Status',
+               '17p Status',
+               '17q Status',
+               '18p Status',
+               '18q Status',
+               '19p Status',
+               '19q Status',
+               '1p Status',
+               '1q Status',
+               '20p Status',
+               '20q Status',
+               '21 (21q) Status',
+               '22 (22q) Status',
+               '2p Status',
+               '2q Status',
+               '3p Status',
+               '3q Status',
+               '4p Status',
+               '4q Status',
+               '5p Status',
+               '5q Status',
+               '6p Status',
+               '6q Status',
+               '7p Status',
+               '7q Status',
+               '8p Status',
+               '8q Status',
+               '9p Status',
+               '9q Status',
+               'In PanCan Pathway Analysis',
+               'Birth from Initial Pathologic Diagnosis Date',
+               'Tissue Prospective Collection Indicator',
+               'Tissue Retrospective Collection Indicator'))
+```
+
+## 3. Changing variables names
+
+Using snake_style
+
+NO NEED TO CHANGE VARIABLE NAMES
+```{r}
+kirp_clean4 <- kirp_clean4 %>%
+     rename(patient_id = 'Patient ID',
+            age = 'Diagnosis Age',
+            aneuploidity_score = 'Aneuploidy Score',
+            buffa_score = 'Buffa Hypoxia Score',
+            metastasis_stg = 'American Joint Committee on Cancer Metastasis Stage Code',
+            specific_survival_months = 'Months of disease-specific survival',
+            specific_survival_status = 'Disease-specific Survival status',
+            lymph_stg = 'Neoplasm Disease Lymph Node Stage American Joint Committee on Cancer Code',
+            neoplasm_stg = 'Neoplasm Disease Stage American Joint Committee on Cancer Code',
+            tumor_stg = 'American Joint Committee on Cancer Tumor Stage Code',
+            disease_free_mth = 'Disease Free (Months)',
+            disease_free_stt = 'Disease Free Status',
+            survival_progress = 'Progress Free Survival (Months)',
+            ethnicity = 'Ethnicity Category', 
+            frac_genome_alter = 'Fraction Genome Altered',
+            msi_score = 'MSI MANTIS Score',
+            msi_sensor = 'MSIsensor Score',
+            neoplasm_event = 'New Neoplasm Event Post Initial Therapy Indicator',
+            neoadj_therapy = 'Neoadjuvant Therapy Type Administered Prior To Resection Text',
+            prior_cancer = 'Prior Diagnosis',
+            mutation_cnt = 'Mutation Count',
+            over_surv_mth = 'Overall Survival (Months)',
+            over_surv_stt = 'Overall Survival Status',
+            race = 'Race Category',
+            gender = 'Sex',
+            tissue_site = 'Tissue Source Site',
+            weight = 'Patient Weight',
+            neoplasm_status = 'Person Neoplasm Cancer Status',
+            progression_status = 'Progression Free Status',
+            primary_lympn_node = 'Primary Lymph Node Presentation Assessment',
+            radiation_therapy = 'Radiation Therapy',
+            ragnum_score = 'Ragnum Hypoxia Score',
+            winter_hypoxia = 'Winter Hypoxia Score'
+            )
+```
+
+```{r}
+summary(kirp_clean4)
+```
+
+## 4. Taming data
+
+Use lubridate for dates
+
+```{r}
+kirp_clean4 <- kirp_clean4 %>%
+     mutate_if(is.character, as.factor) %>%
+     mutate(patient_id = as.character(patient_id),
+            age = as.integer(age))
+```
+
+## 5. Checking NA patterns 
+
+Check distincts types of NAs: MCAR, MAR, MNAR
+
+```{r}
+kirp_clean4  %>%
+     missing_plot()
+
+missing_glimpse(kirp_clean4)
+```
+
+## 6. Checking numeric variables
+
+Check data distribution, plausible ranges, outliers;
+Thinking about deleting outliers from dataset? Need to evaluate carefully each one!
+
+```{r}
+kirp_clean4 %>%
+     select_if(is.numeric) %>%
+     summary()
+```
+
+```{r}
+ggplot(kirp_clean4, aes(age)) +
+     geom_histogram(bins = 20, alpha = 0.8, color = "red")
+```
+
+YEAR_DIAGNOSE???
+```{r}
+ggplot(kirc_clean4, aes(year_diagnose)) +
+     geom_histogram(bins = 20, alpha = 0.8, color = "red")
+```
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=survival_progress)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$survival_progress)
+# error: disease_free_mth < 0
+```
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=frac_genome_alter)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$frac_genome_alter)
+```
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=aneuploidity_score)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$aneuploidity_score)
+```
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=mutation_cnt)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$mutation_cnt)
+```
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=over_surv_mth)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$over_surv_mth)
+```
+
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=buffa_score)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$buffa_score)
+```
+
+
+```{r}
+ggplot(kirp_clean4, aes(x ='', y=winter_hypoxia)) +
+     geom_boxplot(width = .5) +
+     geom_jitter(width = 0.05, alpha = 0.2, color = "orange")
+boxplot.stats(kirp_clean4$winter_hypoxia)
+```
+```{r}
+summary('tumor_stg')
+```
+
+
+## 7. Checking categorical variables
+
+Check frequency, lables and levels 
+
+```{r}
+kirp_clean4 %>%
+     select_if(is.factor) %>%
+     summary() 
+
+# agregating levels
+kirp_clin <- kirp_clean4 %>%
+     mutate(tumor_stg = fct_collapse(tumor_stg,
+                             T1 = c('T1', 'T1a', 'T1b'),
+                             T2 = c('T2', 'T2a', 'T2b'),
+                             T3 = c('T3', 'T3a', 'T3b', 'T3c')))
+
+kirp_clin <- kirp_clin %>%
+     mutate(prior_cancer = fct_collapse(prior_cancer, 
+               Yes = c('Yes', 'Yes, History of Prior Malignancy', 'Yes, History of Synchronous/Bilateral Malignancy')))
+
+kirp_clin <- kirp_clin %>%
+     mutate(gender = fct_collapse(gender, Male = c('MALE', 'Male')))
+                                        
+kirp_clin <- kirp_clin %>%
+     mutate(tissue_site = fct_collapse(tissue_site,
+                         A = c('A3', 'AK', 'AS'),
+                         B = c('B0', 'B2', 'B4', 'B8', 'BP'),
+                         C = c('CJ', 'CW', 'CZ'),
+                         OTHERS = c('G6', 'GK', 'MM', 'MW',
+                                    '3Z', '6D', 'DV', 'EU', 'T7')))
+
+# changing level names
+kirp_clin <- kirp_clin %>%
+     mutate(race = fct_recode(race, Asian='ASIAN', 'Black or African American'='BLACK OR AFRICAN AMERICAN', White='WHITE'))
+
+
+kirp_clin %>%
+     select_if(is.factor) %>%
+     summary()
+```
+
+## 8. Correcting and checking again 
+
+```{r}
+# month values < 0
+kirp_clin$disease_free_mth[kirp_clin$disease_free_mth == -11.79] <- 11.79
+kirp_clin$disease_free_mth[kirp_clin$disease_free_mth == -0.62] <- 0.62
+
+skim(kirp_clin)
+```
+
+## 9. Saving dataset
+
+```{r}
+write_csv(kirc_clin, path = "data/kirc_clin.csv")
+
+rm(kirp_clean4, kirp_clean3, kirp_clean2, kirp_clean1, kirp_clean0, kirp_clean, NA_sum, NA_fifty)
+```
+
+## Further analysis
+
+- [Comparison and Hyphotesis test](2.correlation.md) 
+- [Logistic Regression Model](3.logistic_regression.md)
+
+```{r}
+sessionInfo()
+```
+
+
