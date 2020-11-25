@@ -404,9 +404,7 @@ skim(kirp_clin)
 ## 9. Saving dataset
 
 ```{r}
-write_csv(kirc_clin, path = "data/kirc_clin.csv")
-
-rm(kirp_clean4, kirp_clean3, kirp_clean2, kirp_clean1, kirp_clean0, kirp_clean, NA_sum, NA_fifty)
+write_csv(kirp_clin, path = "C:/Users/Ericd/Documents/KIRP Analisys/TCGA-CBIOPORTAL-DATA/kirp_clean.csv")
 ```
 
 ## Further analysis

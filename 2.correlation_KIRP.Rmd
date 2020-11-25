@@ -53,20 +53,19 @@ setwd(".")
 ## 1. Importing data
 
 ```{r message=FALSE, warning=FALSE, paged.print=FALSE}
-kirc_clin <- read_csv("data/kirc_clin.csv")
+kirp_clin <- read_csv("C:/Users/Ericd/Documents/KIRP Analisys/TCGA-CBIOPORTAL-DATA/kirp_clean.csv")
 ```
 
 ## 2. Taming data 
 
 ```{r}
-kirc_clin <- kirc_clin %>%
+kirp_clin <- kirp_clin %>%
   mutate_if(is.character, as.factor) %>%
   mutate(patient_id = as.character(patient_id),
-         age = as.integer(age),
-         year_diagnose = as.integer(year_diagnose))
+         age = as.integer(age))
 
 # check 
-glimpse(kirc_clin)
+glimpse(kirp_clin)
 ```
 
 ## 3.The dependent variable
